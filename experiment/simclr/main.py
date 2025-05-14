@@ -24,7 +24,6 @@ def train(net, data_loader, train_optimizer, args, epoch, device):
     net.train()
     
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
-
     for pos_1, pos_2 in train_bar:
         pos_1, pos_2 = pos_1.to(device, non_blocking=True), pos_2.to(device, non_blocking=True)
         feature_1, out_1 = net(pos_1)
@@ -34,7 +33,7 @@ def train(net, data_loader, train_optimizer, args, epoch, device):
             l = DCL(temperature=args.temperature).to(device)
             loss = l(out_1, out_2) + l(out_2, out_1)
         elif args.loss == 'dclw':
-            l = DCLW(temperature=args.temperature).to(device)
+            l = DCLW(temperature=args.temperature)
             loss = l(out_1, out_2) + l(out_2, out_1)
         elif args.loss == 'ce':
             out = torch.cat([out_1, out_2], dim=0)
@@ -113,6 +112,13 @@ def select_dataset(dataset_name):
 
 
 def run_train():
+    import argparse
+    import torch
+    import torch.optim as optim
+    from torch.utils.data import DataLoader
+    import os
+    import pandas as pd
+
     parser = argparse.ArgumentParser(description='Train SimCLR')
     parser.add_argument('--feature_dim', default=128, type=int, help='Feature dim for latent vector')
     parser.add_argument('--temperature', default=0.5, type=float, help='Temperature used in softmax')
@@ -121,59 +127,66 @@ def run_train():
     parser.add_argument('--epochs', default=500, type=int, help='Number of sweeps over the dataset to train')
     parser.add_argument('--loss', default='ce', type=str, help='loss function')
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset name: cifar10, cifar100, stl10')
+    parser.add_argument('--resume', action='store_true', help='Resume training from checkpoint')
 
-    # args parse
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
-    batch_size, epochs = args.batch_size, args.epochs
+    batch_size, total_epochs = args.batch_size, args.epochs
     data_root = args.dataset
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # data prepare
-    # dataset_class = select_dataset(args.dataset)
-    # train_data = dataset_class(root='data', train=True, transform=utils.train_transform, download=True)
-    # train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=True,
-    #                           drop_last=True)
-    # memory_data = dataset_class(root='data', train=True, transform=utils.test_transform, download=True)
-    # memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
-    # test_data = dataset_class(root='data', train=False, transform=utils.test_transform, download=True)
-    # test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
+    train_dataset = PairedImageDataset(root=data_root, transform=train_transform)
+    print(len(train_dataset))
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2, drop_last=True, pin_memory=True)
 
-    train_dataset = PairedImageDataset(
-        root=data_root,
-        transform=train_transform
-    )
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=16, drop_last=True)
-    
-    # model setup and optimizer config
     model = Model(feature_dim).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
-    # args.c = len(memory_data.classes)
 
-    # training loop
-    # results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
     results = {'train_loss': []}
+    save_name_pre = f'{feature_dim}_{temperature}_{k}_{batch_size}_{total_epochs}_{args.loss}'
+    os.makedirs('results', exist_ok=True)
+    checkpoint_path = f'results/{save_name_pre}_checkpoint.pth'
 
-    save_name_pre = '{}_{}_{}_{}_{}_{}'.format(feature_dim, temperature, k, batch_size, epochs, args.loss)
-    if not os.path.exists('results'):
-        os.mkdir('results')
-    # best_acc = 0.0
+    # Resume logic
+    start_epoch = 1
     best_loss = 1e9
-    for epoch in range(1, epochs + 1):
+    if args.resume and os.path.exists(checkpoint_path):
+        print(f"Resuming from checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print(model.state_dict)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_loss = checkpoint['best_loss']
+        results = checkpoint.get('results', {'train_loss': []})
+
+        # move optimizer tensors to the right device
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
+
+    # Training loop
+    for epoch in range(start_epoch, total_epochs + 1):
         train_loss = train(model, train_loader, optimizer, args, epoch, device)
         results['train_loss'].append(train_loss)
-        # test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, args, epoch)
-        # results['test_acc@1'].append(test_acc_1)
-        # results['test_acc@5'].append(test_acc_5)
-        # save statistics
-        data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
-        data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')
-        # if test_acc_1 > best_acc:
-        #     best_acc = test_acc_1
-        #     torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
-        
+
+        # Save CSV statistics
+        df = pd.DataFrame(data=results, index=range(1, epoch + 1))
+        df.to_csv(f'results/{save_name_pre}_statistics.csv', index_label='epoch')
+
+        # Save best model
         if train_loss < best_loss:
             best_loss = train_loss
-            torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
+            torch.save(model.state_dict(), f'results/{save_name_pre}_model.pth')
+
+        # Save checkpoint
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_loss': best_loss,
+            'results': results
+        }
+        torch.save(checkpoint, checkpoint_path)
