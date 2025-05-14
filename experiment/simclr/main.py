@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from experiment.simclr import utils
 from experiment.simclr.model import Model
+from experiment.simclr.dataset import *
 
 
 # train for one epoch to learn unique features
@@ -18,31 +19,30 @@ from loss import DCL
 from loss.dcl import DCLW
 
 
-def train(net, data_loader, train_optimizer, args, epoch):
+def train(net, data_loader, train_optimizer, args, epoch, device):
+    net = net.to(device)
     net.train()
+    
     total_loss, total_num, train_bar = 0.0, 0, tqdm(data_loader)
-    for pos_1, pos_2, target in train_bar:
-        pos_1, pos_2 = pos_1.cuda(non_blocking=True), pos_2.cuda(non_blocking=True)
+
+    for pos_1, pos_2 in train_bar:
+        pos_1, pos_2 = pos_1.to(device, non_blocking=True), pos_2.to(device, non_blocking=True)
         feature_1, out_1 = net(pos_1)
         feature_2, out_2 = net(pos_2)
+
         if args.loss == 'dcl':
-            l = DCL(temperature=args.temperature)
+            l = DCL(temperature=args.temperature).to(device)
             loss = l(out_1, out_2) + l(out_2, out_1)
         elif args.loss == 'dclw':
-            l = DCLW(temperature=args.temperature)
+            l = DCLW(temperature=args.temperature).to(device)
             loss = l(out_1, out_2) + l(out_2, out_1)
         elif args.loss == 'ce':
-            # [2*B, D]
             out = torch.cat([out_1, out_2], dim=0)
-            # [2*B, 2*B]
             sim_matrix = torch.exp(torch.mm(out, out.t().contiguous()) / args.temperature)
-            mask = (torch.ones_like(sim_matrix) - torch.eye(2 * args.batch_size, device=sim_matrix.device)).bool()
-            # [2*B, 2*B-1]
+            mask = (torch.ones_like(sim_matrix) - torch.eye(2 * args.batch_size, device=device)).bool()
             sim_matrix = sim_matrix.masked_select(mask).view(2 * args.batch_size, -1)
 
-            # compute loss
             pos_sim = torch.exp(torch.sum(out_1 * out_2, dim=-1) / args.temperature)
-            # [2*B]
             pos_sim = torch.cat([pos_sim, pos_sim], dim=0)
             loss = (- torch.log(pos_sim / sim_matrix.sum(dim=-1))).mean()
 
@@ -126,37 +126,54 @@ def run_train():
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, epochs = args.batch_size, args.epochs
+    data_root = args.dataset
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # data prepare
-    dataset_class = select_dataset(args.dataset)
-    train_data = dataset_class(root='data', train=True, transform=utils.train_transform, download=True)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=True,
-                              drop_last=True)
-    memory_data = dataset_class(root='data', train=True, transform=utils.test_transform, download=True)
-    memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
-    test_data = dataset_class(root='data', train=False, transform=utils.test_transform, download=True)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
+    # dataset_class = select_dataset(args.dataset)
+    # train_data = dataset_class(root='data', train=True, transform=utils.train_transform, download=True)
+    # train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=True,
+    #                           drop_last=True)
+    # memory_data = dataset_class(root='data', train=True, transform=utils.test_transform, download=True)
+    # memory_loader = DataLoader(memory_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
+    # test_data = dataset_class(root='data', train=False, transform=utils.test_transform, download=True)
+    # test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=16, pin_memory=True)
 
+    train_dataset = PairedImageDataset(
+        root=data_root,
+        transform=train_transform
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=16, drop_last=True)
+    
     # model setup and optimizer config
-    model = Model(feature_dim).cuda()
+    model = Model(feature_dim).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
-    args.c = len(memory_data.classes)
+    # args.c = len(memory_data.classes)
 
     # training loop
-    results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
+    # results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
+    results = {'train_loss': []}
+
     save_name_pre = '{}_{}_{}_{}_{}_{}'.format(feature_dim, temperature, k, batch_size, epochs, args.loss)
     if not os.path.exists('results'):
         os.mkdir('results')
-    best_acc = 0.0
+    # best_acc = 0.0
+    best_loss = 1e9
     for epoch in range(1, epochs + 1):
-        train_loss = train(model, train_loader, optimizer, args, epoch)
+        train_loss = train(model, train_loader, optimizer, args, epoch, device)
         results['train_loss'].append(train_loss)
-        test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, args, epoch)
-        results['test_acc@1'].append(test_acc_1)
-        results['test_acc@5'].append(test_acc_5)
+        # test_acc_1, test_acc_5 = test(model, memory_loader, test_loader, args, epoch)
+        # results['test_acc@1'].append(test_acc_1)
+        # results['test_acc@5'].append(test_acc_5)
         # save statistics
         data_frame = pd.DataFrame(data=results, index=range(1, epoch + 1))
         data_frame.to_csv('results/{}_statistics.csv'.format(save_name_pre), index_label='epoch')
-        if test_acc_1 > best_acc:
-            best_acc = test_acc_1
+        # if test_acc_1 > best_acc:
+        #     best_acc = test_acc_1
+        #     torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
+        
+        if train_loss < best_loss:
+            best_loss = train_loss
             torch.save(model.state_dict(), 'results/{}_model.pth'.format(save_name_pre))
