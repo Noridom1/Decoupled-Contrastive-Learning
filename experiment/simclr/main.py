@@ -128,11 +128,14 @@ def run_train():
     parser.add_argument('--loss', default='ce', type=str, help='loss function')
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset name: cifar10, cifar100, stl10')
     parser.add_argument('--resume', action='store_true', help='Resume training from checkpoint')
+    parser.add_argument('--checkpoint_root', default='/content/drive/MyDrive/SimCLR_checkpoint', help='Checkpoint root')
+
 
     args = parser.parse_args()
     feature_dim, temperature, k = args.feature_dim, args.temperature, args.k
     batch_size, total_epochs = args.batch_size, args.epochs
     data_root = args.dataset
+    checkpoint_root = args.checkpoint_root
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -145,8 +148,7 @@ def run_train():
 
     results = {'train_loss': []}
     save_name_pre = f'{feature_dim}_{temperature}_{k}_{batch_size}_{total_epochs}_{args.loss}'
-    os.makedirs('results', exist_ok=True)
-    checkpoint_path = f'results/{save_name_pre}_checkpoint.pth'
+    checkpoint_path = f'{checkpoint_root}/{save_name_pre}_checkpoint.pth'
 
     # Resume logic
     start_epoch = 1
@@ -174,12 +176,16 @@ def run_train():
 
         # Save CSV statistics
         df = pd.DataFrame(data=results, index=range(1, epoch + 1))
-        df.to_csv(f'results/{save_name_pre}_statistics.csv', index_label='epoch')
-
+        csv_path = f'{checkpoint_root}/{save_name_pre}_statistics.csv'
+        df.to_csv(csv_path, index_label='epoch')
+        print(f'[INFO] Saved csv report to {csv_path}')
+    
         # Save best model
         if train_loss < best_loss:
             best_loss = train_loss
-            torch.save(model.state_dict(), f'results/{save_name_pre}_model.pth')
+            state_dict_path = f'{checkpoint_root}/{save_name_pre}_model.pth'
+            torch.save(model.state_dict(), state_dict_path)
+            print(f'[INFO] Saved state dict to {state_dict_path}')
 
         # Save checkpoint
         checkpoint = {
@@ -190,3 +196,5 @@ def run_train():
             'results': results
         }
         torch.save(checkpoint, checkpoint_path)
+        print(f'[INFO] Saved Checkpoint to {checkpoint_path}')
+        
