@@ -22,6 +22,7 @@ class DCL(object):
         :param z2: second embedding vector
         :return: one-way loss
         """
+        # z1: (B, feat); z2 : (B, feat)
         cross_view_distance = torch.mm(z1, z2.t())
         positive_loss = -torch.diag(cross_view_distance) / self.temperature
         if self.weight_fn is not None:

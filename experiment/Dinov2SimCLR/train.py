@@ -16,19 +16,23 @@ def train(args):
     processor = AutoImageProcessor.from_pretrained(args.model_name)
     dataset = SimCLRPairDataset(args.data_dir, processor_name=args.model_name)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    print(f"[INFO] Dataset loaded with size {len(dataset)}")
 
     # 3. Backbone + Projection Head Model
-    backbone = AutoModel.from_pretrained(args.model_name)
-    for param in backbone.parameters():
-        param.requires_grad = False
+    model = DINOv2SimCLR(feature_dim=args.feature_dim, model_name=args.model_name).to(device)
+    print(f"[INFO] Model loaded")
+    # Print model stats
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    model = DINOv2SimCLR(backbone=backbone, feature_dim=args.feature_dim).to(device)
-
+    print(f"[INFO] Total parameters: {total_params:,}")
+    print(f"[INFO] Trainable parameters: {trainable_params:,}")
     # 4. Optimizer
     optimizer = torch.optim.Adam(model.g.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # 5. Contrastive Loss
     criterion = DCLW(sigma=args.sigma, temperature=args.temp) if args.loss == "dclw" else DCL(temperature=args.temp)
+    print(f"[INFO] Using loss function: {args.loss}")
 
     # 6. Load Checkpoint (if given)
     start_epoch = 0
@@ -41,12 +45,12 @@ def train(args):
         total_loss = 0.0
         for img1, img2 in tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}"):
             img1, img2 = img1.to(device), img2.to(device)
-
+        
             _, z1 = model(img1)
             _, z2 = model(img2)
 
             loss = criterion(z1, z2)
-
+            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -82,3 +86,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     train(args)
+
+
+batch = 256
+256 pairs
+z1 = a[] - 256
+z2 = b[] - 256
+
+a[i] is original of b[i]
+b[i] is augmented of a[i]
+
+    

@@ -18,7 +18,7 @@ class DINOv2SimCLR(nn.Module):
         # Figure out output embedding dimension
         hidden_dim = self.backbone.config.hidden_size  # e.g., 768 for dinov2-base
 
-        # Projection head
+        # Projection head - MLP
         self.g = nn.Sequential(
             nn.Linear(hidden_dim, 512, bias=False),
             nn.BatchNorm1d(512),
@@ -27,13 +27,13 @@ class DINOv2SimCLR(nn.Module):
         )
 
     def forward(self, x):
-        # DINOv2 expects pixel values normalized in a specific way
-        # You must normalize your inputs using the processor during training pipeline
+        # print("Backbone started")
         outputs = self.backbone(pixel_values=x)
         last_hidden_state = outputs.last_hidden_state  # [B, Patches+1, C]
         cls_token = last_hidden_state[:, 0]  # [B, C] - use CLS token as image representation
 
         feature = cls_token  # encoder output
+        # print("Backbone finished")
         out = self.g(feature)  # projection head
 
         return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
