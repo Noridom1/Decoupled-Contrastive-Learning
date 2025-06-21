@@ -14,7 +14,7 @@ def train(args):
 
     # 2. Dataset & Processor
     processor = AutoImageProcessor.from_pretrained(args.model_name)
-    dataset = SimCLRPairDataset(args.data_dir, processor_name=args.model_name)
+    dataset = SimCLRPairDataset(args.data_dir)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     print(f"[INFO] Dataset loaded with size {len(dataset)}")
 
@@ -31,8 +31,7 @@ def train(args):
     optimizer = torch.optim.Adam(model.g.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # 5. Contrastive Loss
-    criterion = DCLW(sigma=args.sigma, temperature=args.temp) if args.loss == "dclw" else DCL(temperature=args.temp)
-    criterion = criterion.to(device)
+    criterion = DCLW(sigma=args.sigma, temperature=args.temp).to(device) if args.loss == "dclw" else DCL(temperature=args.temp)
     print(f"[INFO] Using loss function: {args.loss}")
 
     # 6. Load Checkpoint (if given)

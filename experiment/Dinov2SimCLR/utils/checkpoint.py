@@ -24,5 +24,5 @@ def load_checkpoint(model, optimizer, path, device):
 
     start_epoch = checkpoint['epoch'] + 1
     print(f"🔁 Resumed from checkpoint: {path}, starting at epoch {start_epoch}")
-    return model, optimizer, start_epoch, loss
+    return model, optimizer, start_epoch, save_loss
 
