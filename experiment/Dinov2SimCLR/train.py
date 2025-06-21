@@ -37,8 +37,9 @@ def train(args):
 
     # 6. Load Checkpoint (if given)
     start_epoch = 0
+    save_loss = []
     if args.checkpoint and os.path.exists(args.checkpoint):
-        model, optimizer, start_epoch = load_checkpoint(model, optimizer, args.checkpoint, device)
+        model, optimizer, start_epoch, save_loss = load_checkpoint(model, optimizer, args.checkpoint, device)
 
     # 7. Training Loop
     model.train()
@@ -62,13 +63,14 @@ def train(args):
             train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch + 1, args.epochs, total_loss / total_num))
 
         avg_loss = total_loss / total_num
+        save_loss.append(avg_loss)
         print(f"📘 Epoch [{epoch+1}/{args.epochs}], Loss: {avg_loss:.4f}")
 
         # Save checkpoint
         if args.save_path:
             os.makedirs(args.save_path, exist_ok=True)
             save_path = os.path.join(args.save_path, f"latest.pth")
-            save_checkpoint(model, optimizer, epoch, save_path)
+            save_checkpoint(model, optimizer, epoch, save_loss, save_path)
 
 
 if __name__ == "__main__":
