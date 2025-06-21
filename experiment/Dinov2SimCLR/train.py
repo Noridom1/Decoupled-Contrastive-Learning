@@ -32,6 +32,7 @@ def train(args):
 
     # 5. Contrastive Loss
     criterion = DCLW(sigma=args.sigma, temperature=args.temp) if args.loss == "dclw" else DCL(temperature=args.temp)
+    criterion = criterion.to(device)
     print(f"[INFO] Using loss function: {args.loss}")
 
     # 6. Load Checkpoint (if given)
@@ -42,22 +43,25 @@ def train(args):
     # 7. Training Loop
     model.train()
     for epoch in range(start_epoch, args.epochs):
-        total_loss = 0.0
-        for img1, img2 in tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}"):
+        total_loss, total_num = 0.0, 0
+        train_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
+        for img1, img2 in train_bar:
             img1, img2 = img1.to(device), img2.to(device)
         
             _, z1 = model(img1)
             _, z2 = model(img2)
 
-            loss = criterion(z1, z2)
+            loss = criterion(z1, z2) + criterion(z2, z1)
             
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
+            total_num += args.batch_size
+            total_loss += loss.item() * args.batch_size
+            train_bar.set_description('Train Epoch: [{}/{}] Loss: {:.4f}'.format(epoch + 1, args.epochs, total_loss / total_num))
 
-        avg_loss = total_loss / len(dataloader)
+        avg_loss = total_loss / total_num
         print(f"📘 Epoch [{epoch+1}/{args.epochs}], Loss: {avg_loss:.4f}")
 
         # Save checkpoint
@@ -85,15 +89,14 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, default="", help="Path to checkpoint to resume from")
 
     args = parser.parse_args()
+    print(f"[INFO] Feature Dimension: {args.feature_dim}")
+    print(f"[INFO] Batch Size: {args.batch_size}")
+    print(f"[INFO] Loss Function: {args.loss}")
+    print(f"[INFO] Save Path: {args.save_path}")
+    print(f"[INFO] Checkpoint: {args.checkpoint if args.checkpoint else 'Start from scratch'}")
+    print('-' * 40)
+
     train(args)
 
-
-batch = 256
-256 pairs
-z1 = a[] - 256
-z2 = b[] - 256
-
-a[i] is original of b[i]
-b[i] is augmented of a[i]
 
     

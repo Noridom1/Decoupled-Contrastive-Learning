@@ -1,7 +1,7 @@
 import os
 import json
 from PIL import Image
-from random_augmenter import RandomAugmenter
+from experiment.Dinov2SimCLR.utils.random_augmenter import RandomAugmenter
 from tqdm import *
 
 def generate_augmented_images(input_folder, output_folder='augmented', json_path='pairs.json'):
