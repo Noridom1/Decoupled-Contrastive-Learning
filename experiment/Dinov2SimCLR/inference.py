@@ -15,7 +15,7 @@ def load_model(checkpoint_path, model_name, feature_dim, device):
         param.requires_grad = False
 
     # Load model
-    model = DINOv2SimCLR(backbone=backbone, feature_dim=feature_dim).to(device)
+    model = DINOv2SimCLR(feature_dim=feature_dim, model_name=model_name).to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
