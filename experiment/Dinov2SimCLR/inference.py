@@ -22,8 +22,13 @@ def load_model(checkpoint_path, model_name, feature_dim, device):
     return model
 
 def get_image_paths(folder):
-    return [os.path.join(folder, f) for f in os.listdir(folder)
-            if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    image_paths = []
+    for root, _, files in os.walk(folder):
+        for file in files:
+            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                image_paths.append(os.path.join(root, file))
+    return image_paths
+
 
 def load_image(path):
     image = Image.open(path).convert('RGB')
